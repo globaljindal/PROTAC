@@ -1,0 +1,97 @@
+# Akhil Jindal - https://github.com/globaljindal
+# SUNY Stony Brook University
+# ABC Group | Laufer Center for Physical and Quantitative Biology
+# PROTAC Project
+# December 2018
+
+from __future__ import division
+import os
+import sys
+
+from glob import glob
+from subprocess import Popen,PIPE
+
+import numpy as np
+import pandas as pd
+import scipy as sp
+
+# Set Up Input Directories/Files: 
+# LIG_FOLDER, LIG_CRYSTAL, LIG_MOBILE, ROT_PARAM, CLUSTER files
+
+# LIG_FOLDER should be the file that has the extracted file from a ClusPro job
+
+LIG_FOLDER = '/home/ajindal/Dropbox/PROTAC/lig03_UB'
+LIG_FOLDER = LIG_FOLDER.rstrip('/')
+
+# LIG_MOBILE, LIG_CRYSTAL, and ROT_PARAM are obtained/extracted from LIG_FOLDER
+
+LIG_CRYSTAL = '/home/ajindal/Dropbox/PROTAC/ligModels/inputPDBGen/lig.pdb'
+LIG_MOBILE = '/home/ajindal/Dropbox/PROTAC/ligModels/inputPDBGen/lig.pdb'
+ROT_PARAM = '/home/ajindal/Dropbox/PROTAC/ligModels/inputPDBGen/rot70k.0.0.4.prm'
+
+# Note: Create artifical CLUSTER file (Center = 1)
+
+CLUSTER = '/home/ajindal/Dropbox/PROTAC/ligModels/inputPDBGen/cluster.cluster'
+
+# Set Up Outputp Directories/Files:
+
+# Where FT files are to be extracted to
+
+OUT_DIR = '/home/ajindal/Dropbox/PROTAC/ligModels/ftfiles'
+
+# Where an intermediate FT file is to be stored/created:
+
+FT_GEN_PDB = '/home/ajindal/Dropbox/PROTAC/ligModels/ftfiles/ft_gen_pdb.txt'
+
+# Where to store outputted PDBs:
+
+PDB_OUT = '/home/ajindal/Dropbox/PROTAC/ligModels/lig03_UB.006/'
+PDB_OUT = PDB_OUT.rstrip('/')
+os.mkdir(PDB_OUT)
+
+# Indicate a base name for outputted PDBs:
+
+PDB_NAME = 'lig03_UB.006'
+
+# Identifies .000, .002, .004, .006 FT files in LIG_FOLDER directory
+
+FT_FILES = []
+for ff in glob(os.path.join(LIG_FOLDER, 'ft.*.gz')):
+    num = int(os.path.basename(ff).split('.')[1])
+    if num % 2 == 0:
+        FT_FILES.append(ff)
+
+# Extract identified (.000, .002, .004, and .006) files and move extracted files to OUT_DIR Directory
+# Note: may need to delete any intermediate/extracted ft files that you do not wish to process with 'sblu' method
+
+UNZIPPED_FILES = []
+for ff in FT_FILES:
+    out_file = os.path.join(OUT_DIR, os.path.basename(ff).replace('.gz',''))
+    cmd = 'gzip -dc {} > {}'.format(ff, out_file)
+    print cmd
+    proc = Popen(cmd, shell=True, stderr=PIPE, stdout=PIPE)
+    proc.communicate()
+    UNZIPPED_FILES.append(out_file)
+    
+# Truncate each FT file ('sed -i '"x, $d" {}', where x=number of desired models) - default at 1000
+    
+    truncate = 'sed -i "2000,$ d" {}'.format(out_file)
+    print truncate
+    proc = Popen(truncate, shell=True, stderr=PIPE, stdout=PIPE)
+    proc.communicate()
+
+# Execute the 'sblu docking gen_cluster_pdb' method
+# Note: the first for loop is limited to the first file
+# due to size/number of requested PDBS UNZIPPED_FILES[z], where z=desired FT file
+
+for ftunzipped in glob(UNZIPPED_FILES[2]):
+    with open(ftunzipped, 'r') as rf:
+        for num, ftentry in enumerate(rf):
+            with open(FT_GEN_PDB, 'w') as ft_gen_pdb:
+                ft_gen_pdb.write(ftentry)
+                ft_gen_pdb.write(ftentry)
+                ft_gen_pdb.flush()
+                cmd = 'sblu docking gen_cluster_pdb -o {ligout}/{ligname}.{cnt} {clusterfile} {ftfile} {rotparam} {ligfile}'.format(cnt=num, ligfile=LIG_MOBILE, clusterfile=CLUSTER, ftfile=FT_GEN_PDB, rotparam=ROT_PARAM, ligout=PDB_OUT, ligname=PDB_NAME)
+                print cmd
+                proc = Popen(cmd, shell=True, stderr=PIPE, stdout=PIPE)
+                so,se = proc.communicate()
